@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import './App.css'
 
@@ -13,6 +14,7 @@ function App() {
   const [lancamentos, setLancamentos] = useState([])
   const [mensagem, setMensagem] = useState('')
   const [carregando, setCarregando] = useState(false)
+  const [acaoEmAndamento, setAcaoEmAndamento] = useState(null)
 
   async function buscarLancamentos() {
     try {
@@ -26,6 +28,7 @@ function App() {
       setLancamentos(dados)
     } catch (error) {
       console.error('Erro ao buscar lançamentos:', error)
+      setMensagem('Não foi possível carregar os lançamentos.')
     }
   }
 
@@ -36,10 +39,10 @@ function App() {
   function alterarCampo(event) {
     const { name, value } = event.target
 
-    setForm({
-      ...form,
+    setForm((formAnterior) => ({
+      ...formAnterior,
       [name]: value,
-    })
+    }))
   }
 
   async function cadastrarLancamento(event) {
@@ -64,8 +67,6 @@ function App() {
         throw new Error('Erro ao cadastrar lançamento.')
       }
 
-      setMensagem('Lançamento cadastrado com sucesso!')
-
       setForm({
         descricao: '',
         valor: '',
@@ -75,22 +76,76 @@ function App() {
       })
 
       await buscarLancamentos()
+      setMensagem('Lançamento cadastrado com sucesso!')
     } catch (error) {
+      console.error('Erro ao cadastrar lançamento:', error)
       setMensagem('Não foi possível cadastrar o lançamento.')
     } finally {
       setCarregando(false)
     }
   }
 
-  const totalReceitas = lancamentos
-    .filter((lancamento) => lancamento.tipo === 'RECEITA')
-    .reduce((total, lancamento) => total + Number(lancamento.valor), 0)
+  async function alterarStatus(id, acao) {
+    const operacao = acao === 'aprovar' ? 'aprovar' : 'rejeitar'
 
-  const totalDespesas = lancamentos
-    .filter((lancamento) => lancamento.tipo === 'DESPESA')
-    .reduce((total, lancamento) => total + Number(lancamento.valor), 0)
+    setMensagem('')
+    setAcaoEmAndamento(id)
 
-  const resultado = totalReceitas - totalDespesas
+    try {
+      const response = await fetch(
+        `http://localhost:8080/lancamentos/${id}/${operacao}`,
+        { method: 'PATCH' }
+      )
+
+      if (!response.ok) {
+        const erro = await response.json().catch(() => null)
+        throw new Error(
+          erro?.erro || 'Não foi possível alterar o status.'
+        )
+      }
+
+      await buscarLancamentos()
+
+      setMensagem(
+        acao === 'aprovar'
+          ? 'Lançamento aprovado com sucesso!'
+          : 'Lançamento rejeitado com sucesso!'
+      )
+    } catch (error) {
+      console.error('Erro ao alterar status:', error)
+      setMensagem(error.message || 'Erro ao atualizar o lançamento.')
+    } finally {
+      setAcaoEmAndamento(null)
+    }
+  }
+
+  
+const lancamentosAprovados = lancamentos.filter(
+  (lancamento) => lancamento.status === "APROVADO"
+);
+
+const totalReceitas = lancamentosAprovados
+  .filter((lancamento) => lancamento.tipo === "RECEITA")
+  .reduce((total, lancamento) => total + Number(lancamento.valor), 0);
+
+const totalDespesas = lancamentosAprovados
+  .filter((lancamento) => lancamento.tipo === "DESPESA")
+  .reduce((total, lancamento) => total + Number(lancamento.valor), 0);
+
+const resultado = totalReceitas - totalDespesas;
+
+
+  const totalPendentes = lancamentos.filter(
+    (lancamento) => lancamento.status === 'PENDENTE'
+  ).length
+
+  const totalAprovados = lancamentos.filter(
+    (lancamento) => lancamento.status === 'APROVADO'
+  ).length
+
+  const totalRejeitados = lancamentos.filter(
+    (lancamento) => lancamento.status === 'REJEITADO'
+  ).length
 
   function formatarMoeda(valor) {
     return new Intl.NumberFormat('pt-BR', {
@@ -119,22 +174,22 @@ function App() {
         </div>
 
         <nav>
-          <button className="nav-item">
+          <button type="button" className="nav-item">
             <span>⌂</span>
             Dashboard
           </button>
 
-          <button className="nav-item active">
+          <button type="button" className="nav-item active">
             <span>↕</span>
             Lançamentos
           </button>
 
-          <button className="nav-item disabled">
+          <button type="button" className="nav-item disabled">
             <span>▦</span>
             Categorias
           </button>
 
-          <button className="nav-item disabled">
+          <button type="button" className="nav-item disabled">
             <span>⚙</span>
             Configurações
           </button>
@@ -190,6 +245,45 @@ function App() {
             <small>Receitas cadastradas - despesas cadastradas</small>
           </div>
         </section>
+
+        <section className="summary status-summary">
+          <div className="card">
+            <div className="card-top">
+              <span>Lançamentos pendentes</span>
+            </div>
+            <strong>{totalPendentes}</strong>
+            <small>Aguardando aprovação</small>
+          </div>
+
+          <div className="card">
+            <div className="card-top">
+              <span>Lançamentos aprovados</span>
+            </div>
+            <strong>{totalAprovados}</strong>
+            <small>Movimentações aprovadas</small>
+          </div>
+
+          <div className="card">
+            <div className="card-top">
+              <span>Lançamentos rejeitados</span>
+            </div>
+            <strong>{totalRejeitados}</strong>
+            <small>Movimentações rejeitadas</small>
+          </div>
+        </section>
+
+        {mensagem && (
+          <div
+            role="status"
+            className={
+              mensagem.includes('sucesso')
+                ? 'message success'
+                : 'message error'
+            }
+          >
+            {mensagem}
+          </div>
+        )}
 
         <section className="content-card">
           <div className="content-header">
@@ -292,18 +386,6 @@ function App() {
               </div>
             </div>
 
-            {mensagem && (
-              <div
-                className={
-                  mensagem.includes('sucesso')
-                    ? 'message success'
-                    : 'message error'
-                }
-              >
-                {mensagem}
-              </div>
-            )}
-
             <div className="form-actions">
               <button
                 className="primary-button"
@@ -344,6 +426,7 @@ function App() {
                     <th>Data</th>
                     <th>Tipo</th>
                     <th>Status</th>
+                    <th>Ações</th>
                     <th className="value-column">Valor</th>
                   </tr>
                 </thead>
@@ -391,6 +474,42 @@ function App() {
                                 ? 'Rejeitado'
                                 : 'Pendente'}
                           </span>
+                        </td>
+
+                        <td>
+                          {lancamento.status === 'PENDENTE' ? (
+                            <div className="action-buttons">
+                              <button
+                                type="button"
+                                className="action-button approve-button"
+                                disabled={acaoEmAndamento !== null}
+                                onClick={() =>
+                                  alterarStatus(lancamento.id, 'aprovar')
+                                }
+                              >
+                                {acaoEmAndamento === lancamento.id
+                                  ? 'Processando...'
+                                  : 'Aprovar'}
+                              </button>
+
+                              <button
+                                type="button"
+                                className="action-button reject-button"
+                                disabled={acaoEmAndamento !== null}
+                                onClick={() =>
+                                  alterarStatus(lancamento.id, 'rejeitar')
+                                }
+                              >
+                                {acaoEmAndamento === lancamento.id
+                                  ? 'Processando...'
+                                  : 'Rejeitar'}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="action-completed">
+                              Finalizado
+                            </span>
+                          )}
                         </td>
 
                         <td

@@ -33,7 +33,8 @@ private String tipo;
 @NotBlank
 private String categoria;
 
-private String status;
+@Column(nullable = false)
+private String status = "PENDENTE";
 
     public Lancamento() {
     }

@@ -501,3 +501,52 @@ nav {
     grid-template-columns: 1fr;
   }
 }
+
+/* Indicadores de status */
+.status-summary {
+  margin-top: 20px;
+}
+
+/* Ações dos lançamentos */
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-button {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.approve-button {
+  background: #e4f5e9;
+  color: #18733b;
+  border-color: #b8e5c5;
+}
+
+.reject-button {
+  background: #fde9e9;
+  color: #b42318;
+  border-color: #f5c2c0;
+}
+
+.action-button:hover:not(:disabled) {
+  opacity: 0.8;
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.action-completed {
+  color: #64748b;
+  font-size: 12px;
+}
