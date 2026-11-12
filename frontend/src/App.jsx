@@ -3,19 +3,28 @@ import { useEffect, useState } from 'react'
 import './App.css'
 
 function App() {
-  const [form, setForm] = useState({
+  const formularioInicial = {
     descricao: '',
     valor: '',
     dataLancamento: '',
     tipo: 'DESPESA',
     categoria: '',
-  })
+  }
 
+  const [form, setForm] = useState(formularioInicial)
   const [lancamentos, setLancamentos] = useState([])
   const [mensagem, setMensagem] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [acaoEmAndamento, setAcaoEmAndamento] = useState(null)
+  const [editandoId, setEditandoId] = useState(null)
 
+  // PESQUISA E FILTROS
+  const [pesquisa, setPesquisa] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
+  const [filtroCategoria, setFiltroCategoria] = useState('')
+  const [filtroStatus, setFiltroStatus] = useState('')
+
+  // BUSCAR LANÇAMENTOS
   async function buscarLancamentos() {
     try {
       const response = await fetch('http://localhost:8080/lancamentos')
@@ -36,6 +45,7 @@ function App() {
     buscarLancamentos()
   }, [])
 
+  // ALTERAR CAMPOS DO FORMULÁRIO
   function alterarCampo(event) {
     const { name, value } = event.target
 
@@ -45,15 +55,54 @@ function App() {
     }))
   }
 
-  async function cadastrarLancamento(event) {
+  // CANCELAR EDIÇÃO
+  function cancelarEdicao() {
+    setEditandoId(null)
+    setForm(formularioInicial)
+    setMensagem('')
+  }
+
+  // INICIAR EDIÇÃO
+  function iniciarEdicao(lancamento) {
+    if (lancamento.status !== 'PENDENTE') {
+      setMensagem('Somente lançamentos pendentes podem ser editados.')
+      return
+    }
+
+    setEditandoId(lancamento.id)
+
+    setForm({
+      descricao: lancamento.descricao,
+      valor: String(lancamento.valor),
+      dataLancamento: lancamento.dataLancamento,
+      tipo: lancamento.tipo,
+      categoria: lancamento.categoria,
+    })
+
+    setMensagem('')
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
+  }
+
+  // CADASTRAR OU EDITAR LANÇAMENTO
+  async function salvarLancamento(event) {
     event.preventDefault()
 
     setMensagem('')
     setCarregando(true)
 
+    const editando = editandoId !== null
+
+    const url = editando
+      ? `http://localhost:8080/lancamentos/${editandoId}`
+      : 'http://localhost:8080/lancamentos'
+
     try {
-      const response = await fetch('http://localhost:8080/lancamentos', {
-        method: 'POST',
+      const response = await fetch(url, {
+        method: editando ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -64,27 +113,35 @@ function App() {
       })
 
       if (!response.ok) {
-        throw new Error('Erro ao cadastrar lançamento.')
+        const erro = await response.json().catch(() => null)
+
+        throw new Error(
+          erro?.erro ||
+          (editando
+            ? 'Erro ao atualizar lançamento.'
+            : 'Erro ao cadastrar lançamento.')
+        )
       }
 
-      setForm({
-        descricao: '',
-        valor: '',
-        dataLancamento: '',
-        tipo: 'DESPESA',
-        categoria: '',
-      })
+      setForm(formularioInicial)
+      setEditandoId(null)
 
       await buscarLancamentos()
-      setMensagem('Lançamento cadastrado com sucesso!')
+
+      setMensagem(
+        editando
+          ? 'Lançamento atualizado com sucesso!'
+          : 'Lançamento cadastrado com sucesso!'
+      )
     } catch (error) {
-      console.error('Erro ao cadastrar lançamento:', error)
-      setMensagem('Não foi possível cadastrar o lançamento.')
+      console.error('Erro ao salvar lançamento:', error)
+      setMensagem(error.message || 'Não foi possível salvar o lançamento.')
     } finally {
       setCarregando(false)
     }
   }
 
+  // APROVAR OU REJEITAR LANÇAMENTO
   async function alterarStatus(id, acao) {
     const operacao = acao === 'aprovar' ? 'aprovar' : 'rejeitar'
 
@@ -99,9 +156,14 @@ function App() {
 
       if (!response.ok) {
         const erro = await response.json().catch(() => null)
+
         throw new Error(
           erro?.erro || 'Não foi possível alterar o status.'
         )
+      }
+
+      if (editandoId === id) {
+        cancelarEdicao()
       }
 
       await buscarLancamentos()
@@ -119,21 +181,91 @@ function App() {
     }
   }
 
-  
-const lancamentosAprovados = lancamentos.filter(
-  (lancamento) => lancamento.status === "APROVADO"
-);
+  // EXCLUIR LANÇAMENTO
+  async function excluirLancamento(id) {
+    const confirmar = window.confirm(
+      'Tem certeza que deseja excluir este lançamento? Esta ação não poderá ser desfeita.'
+    )
 
-const totalReceitas = lancamentosAprovados
-  .filter((lancamento) => lancamento.tipo === "RECEITA")
-  .reduce((total, lancamento) => total + Number(lancamento.valor), 0);
+    if (!confirmar) return
 
-const totalDespesas = lancamentosAprovados
-  .filter((lancamento) => lancamento.tipo === "DESPESA")
-  .reduce((total, lancamento) => total + Number(lancamento.valor), 0);
+    setMensagem('')
+    setAcaoEmAndamento(id)
 
-const resultado = totalReceitas - totalDespesas;
+    try {
+      const response = await fetch(
+        `http://localhost:8080/lancamentos/${id}`,
+        { method: 'DELETE' }
+      )
 
+      if (!response.ok) {
+        const erro = await response.json().catch(() => null)
+
+        throw new Error(
+          erro?.erro || 'Não foi possível excluir o lançamento.'
+        )
+      }
+
+      if (editandoId === id) {
+        cancelarEdicao()
+      }
+
+      await buscarLancamentos()
+
+      setMensagem('Lançamento excluído com sucesso!')
+    } catch (error) {
+      console.error('Erro ao excluir lançamento:', error)
+      setMensagem(error.message || 'Erro ao excluir lançamento.')
+    } finally {
+      setAcaoEmAndamento(null)
+    }
+  }
+
+  // PESQUISA E FILTROS
+  const lancamentosFiltrados = lancamentos.filter((lancamento) => {
+    const correspondePesquisa = (lancamento.descricao || '')
+      .toLowerCase()
+      .includes(pesquisa.trim().toLowerCase())
+
+    const correspondeTipo =
+      filtroTipo === '' || lancamento.tipo === filtroTipo
+
+    const correspondeCategoria =
+      filtroCategoria === '' || lancamento.categoria === filtroCategoria
+
+    const correspondeStatus =
+      filtroStatus === '' || lancamento.status === filtroStatus
+
+    return (
+      correspondePesquisa &&
+      correspondeTipo &&
+      correspondeCategoria &&
+      correspondeStatus
+    )
+  })
+
+  // LIMPAR PESQUISA E FILTROS
+  function limparFiltros() {
+    setPesquisa('')
+    setFiltroTipo('')
+    setFiltroCategoria('')
+    setFiltroStatus('')
+  }
+
+  // INDICADORES FINANCEIROS
+  const lancamentosAprovados = lancamentos.filter(
+    (lancamento) => lancamento.status === 'APROVADO'
+  )
+
+  const totalReceitas = lancamentosAprovados
+    .filter((lancamento) => lancamento.tipo === 'RECEITA')
+    .reduce((total, lancamento) => total + Number(lancamento.valor), 0)
+
+  const totalDespesas = lancamentosAprovados
+    .filter((lancamento) => lancamento.tipo === 'DESPESA')
+    .reduce((total, lancamento) => total + Number(lancamento.valor), 0)
+
+  const resultado = totalReceitas - totalDespesas
 
   const totalPendentes = lancamentos.filter(
     (lancamento) => lancamento.status === 'PENDENTE'
@@ -147,6 +279,7 @@ const resultado = totalReceitas - totalDespesas;
     (lancamento) => lancamento.status === 'REJEITADO'
   ).length
 
+  // FORMATAR VALORES
   function formatarMoeda(valor) {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -154,6 +287,7 @@ const resultado = totalReceitas - totalDespesas;
     }).format(valor)
   }
 
+  // FORMATAR DATAS
   function formatarData(data) {
     if (!data) return ''
 
@@ -211,6 +345,7 @@ const resultado = totalReceitas - totalDespesas;
           <div className="avatar">ADM</div>
         </header>
 
+        {/* INDICADORES FINANCEIROS */}
         <section className="summary">
           <div className="card">
             <div className="card-top">
@@ -242,10 +377,11 @@ const resultado = totalReceitas - totalDespesas;
               {formatarMoeda(resultado)}
             </strong>
 
-            <small>Receitas cadastradas - despesas cadastradas</small>
+            <small>Receitas aprovadas - despesas aprovadas</small>
           </div>
         </section>
 
+        {/* CONTADORES POR STATUS */}
         <section className="summary status-summary">
           <div className="card">
             <div className="card-top">
@@ -272,6 +408,7 @@ const resultado = totalReceitas - totalDespesas;
           </div>
         </section>
 
+        {/* MENSAGENS */}
         {mensagem && (
           <div
             role="status"
@@ -285,16 +422,27 @@ const resultado = totalReceitas - totalDespesas;
           </div>
         )}
 
+        {/* FORMULÁRIO */}
         <section className="content-card">
           <div className="content-header">
             <div>
               <span className="eyebrow">MOVIMENTAÇÕES</span>
-              <h2>Novo lançamento</h2>
-              <p>Registre uma nova receita ou despesa empresarial.</p>
+
+              <h2>
+                {editandoId !== null
+                  ? 'Editar lançamento'
+                  : 'Novo lançamento'}
+              </h2>
+
+              <p>
+                {editandoId !== null
+                  ? 'Altere as informações do lançamento selecionado.'
+                  : 'Registre uma nova receita ou despesa empresarial.'}
+              </p>
             </div>
           </div>
 
-          <form onSubmit={cadastrarLancamento}>
+          <form onSubmit={salvarLancamento}>
             <div className="form-group full">
               <label htmlFor="descricao">Descrição</label>
 
@@ -390,14 +538,30 @@ const resultado = totalReceitas - totalDespesas;
               <button
                 className="primary-button"
                 type="submit"
-                disabled={carregando}
+                disabled={carregando || acaoEmAndamento !== null}
               >
-                {carregando ? 'Salvando...' : '+ Salvar lançamento'}
+                {carregando
+                  ? 'Salvando...'
+                  : editandoId !== null
+                    ? 'Salvar alterações'
+                    : '+ Salvar lançamento'}
               </button>
+
+              {editandoId !== null && (
+                <button
+                  className="action-button reject-button"
+                  type="button"
+                  onClick={cancelarEdicao}
+                  disabled={carregando}
+                >
+                  Cancelar edição
+                </button>
+              )}
             </div>
           </form>
         </section>
 
+        {/* HISTÓRICO DE LANÇAMENTOS */}
         <section className="content-card recent-card">
           <div className="content-header recent-header">
             <div>
@@ -407,14 +571,109 @@ const resultado = totalReceitas - totalDespesas;
             </div>
 
             <span className="total-records">
-              {lancamentos.length} lançamento(s)
+              {lancamentosFiltrados.length} de {lancamentos.length} lançamento(s)
             </span>
           </div>
 
-          {lancamentos.length === 0 ? (
+          {/* PESQUISA */}
+          <div className="form-group full">
+            <label htmlFor="pesquisa">Pesquisar lançamento</label>
+
+            <input
+              id="pesquisa"
+              type="search"
+              placeholder="Digite a descrição do lançamento..."
+              value={pesquisa}
+              onChange={(event) => setPesquisa(event.target.value)}
+            />
+          </div>
+
+          {/* FILTROS */}
+          <div className="form-grid">
+            <div className="form-group">
+              <label htmlFor="filtroTipo">Filtrar por tipo</label>
+
+              <select
+                id="filtroTipo"
+                value={filtroTipo}
+                onChange={(event) => setFiltroTipo(event.target.value)}
+              >
+                <option value="">Todos os tipos</option>
+                <option value="RECEITA">Receitas</option>
+                <option value="DESPESA">Despesas</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="filtroCategoria">Filtrar por categoria</label>
+
+              <select
+                id="filtroCategoria"
+                value={filtroCategoria}
+                onChange={(event) => setFiltroCategoria(event.target.value)}
+              >
+                <option value="">Todas as categorias</option>
+                <option value="Vendas">Vendas</option>
+                <option value="Serviços">Serviços</option>
+                <option value="Fornecedores">Fornecedores</option>
+                <option value="Folha de pagamento">
+                  Folha de pagamento
+                </option>
+                <option value="Impostos">Impostos</option>
+                <option value="Aluguel">Aluguel</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Transporte">Transporte</option>
+                <option value="Utilidades">Utilidades</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label htmlFor="filtroStatus">Filtrar por status</label>
+
+              <select
+                id="filtroStatus"
+                value={filtroStatus}
+                onChange={(event) => setFiltroStatus(event.target.value)}
+              >
+                <option value="">Todos os status</option>
+                <option value="PENDENTE">Pendentes</option>
+                <option value="APROVADO">Aprovados</option>
+                <option value="REJEITADO">Rejeitados</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Limpar filtros</label>
+
+              <button
+                type="button"
+                className="action-button"
+                onClick={limparFiltros}
+              >
+                Limpar pesquisa e filtros
+              </button>
+            </div>
+          </div>
+
+          {/* RESULTADOS */}
+          {lancamentosFiltrados.length === 0 ? (
             <div className="empty-state">
-              <p>Nenhum lançamento cadastrado.</p>
-              <span>Os lançamentos registrados aparecerão aqui.</span>
+              {lancamentos.length === 0 ? (
+                <>
+                  <p>Nenhum lançamento cadastrado.</p>
+                  <span>Os lançamentos registrados aparecerão aqui.</span>
+                </>
+              ) : (
+                <>
+                  <p>Nenhum lançamento encontrado.</p>
+                  <span>
+                    Tente alterar a pesquisa ou os filtros selecionados.
+                  </span>
+                </>
+              )}
             </div>
           ) : (
             <div className="table-wrapper">
@@ -432,7 +691,7 @@ const resultado = totalReceitas - totalDespesas;
                 </thead>
 
                 <tbody>
-                  {[...lancamentos]
+                  {[...lancamentosFiltrados]
                     .sort((a, b) => b.id - a.id)
                     .map((lancamento) => (
                       <tr key={lancamento.id}>
@@ -477,39 +736,67 @@ const resultado = totalReceitas - totalDespesas;
                         </td>
 
                         <td>
-                          {lancamento.status === 'PENDENTE' ? (
-                            <div className="action-buttons">
-                              <button
-                                type="button"
-                                className="action-button approve-button"
-                                disabled={acaoEmAndamento !== null}
-                                onClick={() =>
-                                  alterarStatus(lancamento.id, 'aprovar')
-                                }
-                              >
-                                {acaoEmAndamento === lancamento.id
-                                  ? 'Processando...'
-                                  : 'Aprovar'}
-                              </button>
+                          <div className="action-buttons">
+                            {lancamento.status === 'PENDENTE' ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="action-button"
+                                  onClick={() => iniciarEdicao(lancamento)}
+                                  disabled={
+                                    carregando || acaoEmAndamento !== null
+                                  }
+                                >
+                                  Editar
+                                </button>
 
-                              <button
-                                type="button"
-                                className="action-button reject-button"
-                                disabled={acaoEmAndamento !== null}
-                                onClick={() =>
-                                  alterarStatus(lancamento.id, 'rejeitar')
-                                }
-                              >
-                                {acaoEmAndamento === lancamento.id
-                                  ? 'Processando...'
-                                  : 'Rejeitar'}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="action-completed">
-                              Finalizado
-                            </span>
-                          )}
+                                <button
+                                  type="button"
+                                  className="action-button reject-button"
+                                  onClick={() =>
+                                    excluirLancamento(lancamento.id)
+                                  }
+                                  disabled={
+                                    carregando || acaoEmAndamento !== null
+                                  }
+                                >
+                                  {acaoEmAndamento === lancamento.id
+                                    ? 'Processando...'
+                                    : 'Excluir'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="action-button approve-button"
+                                  disabled={acaoEmAndamento !== null}
+                                  onClick={() =>
+                                    alterarStatus(lancamento.id, 'aprovar')
+                                  }
+                                >
+                                  {acaoEmAndamento === lancamento.id
+                                    ? 'Processando...'
+                                    : 'Aprovar'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="action-button reject-button"
+                                  disabled={acaoEmAndamento !== null}
+                                  onClick={() =>
+                                    alterarStatus(lancamento.id, 'rejeitar')
+                                  }
+                                >
+                                  {acaoEmAndamento === lancamento.id
+                                    ? 'Processando...'
+                                    : 'Rejeitar'}
+                                </button>
+                              </>
+                            ) : (
+                              <span className="action-completed">
+                                Finalizado
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td

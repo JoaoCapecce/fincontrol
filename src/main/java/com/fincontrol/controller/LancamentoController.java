@@ -43,6 +43,70 @@ public class LancamentoController {
         return repository.findAll();
     }
 
+    // EDITAR LANÇAMENTO - SOMENTE PENDENTES
+    @PutMapping("/{id}")
+    public ResponseEntity<?> editar(
+            @PathVariable Long id,
+            @Valid @RequestBody Lancamento dados) {
+
+        var resultado = repository.findById(id);
+
+        if (resultado.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of(
+                            "erro", "Lançamento não encontrado."
+                    ));
+        }
+
+        Lancamento lancamento = resultado.get();
+
+        if (!"PENDENTE".equalsIgnoreCase(lancamento.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of(
+                            "erro",
+                            "Somente lançamentos pendentes podem ser editados."
+                    ));
+        }
+
+        lancamento.setDescricao(dados.getDescricao());
+        lancamento.setValor(dados.getValor());
+        lancamento.setDataLancamento(dados.getDataLancamento());
+        lancamento.setTipo(dados.getTipo());
+        lancamento.setCategoria(dados.getCategoria());
+
+        Lancamento atualizado = repository.save(lancamento);
+
+        return ResponseEntity.ok(atualizado);
+    }
+
+    // EXCLUIR LANÇAMENTO - SOMENTE PENDENTES
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> excluir(@PathVariable Long id) {
+
+        var resultado = repository.findById(id);
+
+        if (resultado.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of(
+                            "erro", "Lançamento não encontrado."
+                    ));
+        }
+
+        Lancamento lancamento = resultado.get();
+
+        if (!"PENDENTE".equalsIgnoreCase(lancamento.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of(
+                            "erro",
+                            "Somente lançamentos pendentes podem ser excluídos."
+                    ));
+        }
+
+        repository.delete(lancamento);
+
+        return ResponseEntity.noContent().build();
+    }
+
     // APROVAR LANÇAMENTO
     @PatchMapping("/{id}/aprovar")
     public ResponseEntity<?> aprovar(@PathVariable Long id) {
